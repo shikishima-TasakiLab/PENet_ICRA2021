@@ -1,4 +1,5 @@
 import argparse
+from dataloaders.hdf5_loader import TrainHDF5Dataset, ValHDF5Dataset
 import os
 
 import torch
@@ -145,13 +146,23 @@ parser.add_argument('-d', '--dilation-rate', default="2", type=int,
                     choices=[1, 2, 4],
                     help='CSPN++ dilation rate')
 
+parser.add_argument('-td', '--train-data', type=str, nargs='*', default=[], help='Train dataset.')
+parser.add_argument('-tdc', '--train-data-config', type=str, help='Train dataset config.')
+parser.add_argument('-vd', '--val-data', type=str, nargs='*', default=[], help='Validation dataset.')
+parser.add_argument('-vdc', '--val-data-config', type=str, help='Validation dataset config.')
+parser.add_argument('-ed', '--eval-data', type=str, nargs='*', default=[], help='Test dataset.')
+parser.add_argument('-edc', '--eval-data-config', type=str, help='Test dataset config.')
+parser.add_argument('-bs', '--block-size', type=int, help='Block size.')
+
 args = parser.parse_args()
 args.result = os.path.join('..', 'results')
 args.use_rgb = ('rgb' in args.input)
 args.use_d = 'd' in args.input
 args.use_g = 'g' in args.input
-args.val_h = 352
-args.val_w = 1216
+# args.val_h = 352
+# args.val_w = 1216
+args.val_h = 256
+args.val_w = 512
 print(args)
 
 cuda = torch.cuda.is_available() and not args.cpu
@@ -376,7 +387,8 @@ def main():
     test_dataset = None
     test_loader = None
     if (args.test):
-        test_dataset = KittiDepth('test_completion', args)
+        # test_dataset = KittiDepth('test_completion', args)
+        test_dataset = ValHDF5Dataset(args.eval_data, args.eval_data_config, quiet=True, block_size=args.block_size, use_mods=(args.block_size - 1, args.block_size))
         test_loader = torch.utils.data.DataLoader(
             test_dataset,
             batch_size=1,
@@ -386,7 +398,8 @@ def main():
         iterate("test_completion", args, test_loader, model, None, logger, 0)
         return
 
-    val_dataset = KittiDepth('val', args)
+    # val_dataset = KittiDepth('val', args)
+    val_dataset = ValHDF5Dataset(args.val_data, args.val_data_config, quiet=True, block_size=args.block_size, use_mods=(args.block_size - 2, args.block_size - 1))
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=1,
@@ -432,7 +445,8 @@ def main():
     # Data loading code
     print("=> creating data loaders ... ")
     if not is_eval:
-        train_dataset = KittiDepth('train', args)
+        # train_dataset = KittiDepth('train', args)
+        train_dataset = TrainHDF5Dataset(args.train_data, args.train_data_config, quiet=True, block_size=args.block_size, use_mods=(0, args.block_size - 2), jitter=args.jitter)
         train_loader = torch.utils.data.DataLoader(train_dataset,
                                                    batch_size=args.batch_size,
                                                    shuffle=True,

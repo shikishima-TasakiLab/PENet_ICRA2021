@@ -208,9 +208,10 @@ ignore_hidden = shutil.ignore_patterns(".", "..", ".git*", "*pycache*",
 
 
 def backup_source_code(backup_directory):
-    if os.path.exists(backup_directory):
-        shutil.rmtree(backup_directory)
-    shutil.copytree('.', backup_directory, ignore=ignore_hidden)
+    pass
+    # if os.path.exists(backup_directory):
+    #     shutil.rmtree(backup_directory)
+    # shutil.copytree('.', backup_directory, ignore=ignore_hidden)
 
 
 def adjust_learning_rate(lr_init, optimizer, epoch, args):
