@@ -131,9 +131,9 @@ parser.add_argument('--cpu', action="store_true", default=False, help='run on cp
 #random cropping
 parser.add_argument('--not-random-crop', action="store_true", default=False,
                     help='prohibit random cropping')
-parser.add_argument('-he', '--random-crop-height', default=320, type=int, metavar='N',
+parser.add_argument('-he', '--random-crop-height', default=256, type=int, metavar='N',
                     help='random crop height')
-parser.add_argument('-w', '--random-crop-width', default=1216, type=int, metavar='N',
+parser.add_argument('-w', '--random-crop-width', default=512, type=int, metavar='N',
                     help='random crop height')
 
 #geometric encoding

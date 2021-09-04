@@ -1,8 +1,10 @@
 from typing import List, Tuple
+from h5dataloader.common.common import hwc2chw
 from h5dataloader.pytorch import HDF5Dataset
 from h5dataloader.common.augmentation import *
 from h5dataloader.common.crop import *
 from h5dataloader.common.resize import *
+from h5dataloader.common.normalization import *
 from pointsmap import Points, VoxelGridMap
 
 from CoordConv import AddCoordsNp
@@ -36,10 +38,11 @@ class TrainHDF5Dataset(HDF5Dataset):
         self.adjust_brightness = Adjust_brightness(factor_range=ValueRange(max(0, 1 - jitter), 1 + jitter))
         self.adjust_contrast = Adjust_contrast(factor_range=ValueRange(max(0, 1 - jitter), 1 + jitter))
         self.adjust_saturation = Adjust_saturation(factor_range=ValueRange(max(0, 1 - jitter), 1 + jitter))
-        self.resize_bilinear = Resize(output_size, interpolation=INTER_LINEAR)
-        self.resize_nn = Resize(output_size, interpolation=INTER_NEAREST)
+        self.resize_bilinear = Resize(output_size[::-1], interpolation=INTER_LINEAR)
+        self.resize_nn = Resize(output_size[::-1], interpolation=INTER_NEAREST)
         self.flip_horizontal = Flip_2d(hflip_rate=0.5, vflip_rate=0.0)
         self.random_pose = RandomPose(range_tr=(0.6, 1.3, 0.7), range_rot=3.0)
+        self.norm_depth = Normalization(TYPE_DEPTH, ValueRange(0.0, 80.0))
 
         self.addcoords = AddCoordsNp(x_dim=output_size[0], y_dim=output_size[1])
 
@@ -53,7 +56,7 @@ class TrainHDF5Dataset(HDF5Dataset):
         }
 
     def create_position(self, key: str, link_idx: int, minibatch_config: dict) -> np.ndarray:
-        return self.addcoords.call()
+        return hwc2chw(self.addcoords.call())
 
     def create_rgb_rgb(self, key: str, link_idx: int, minibatch_config: dict) -> np.ndarray:
         h5_key: str = self.create_h5_key(TYPE_BGR8, key, link_idx, minibatch_config)
@@ -96,7 +99,7 @@ class TrainHDF5Dataset(HDF5Dataset):
             type=TYPE_DEPTH
         )
         fliped = self.flip_horizontal(h5_key, src)
-        return fliped.data
+        return self.norm_depth._norm_depth(h5_key, fliped).data
 
     def create_gt_target(self, key: str, link_idx: int, minibatch_config: dict) -> np.ndarray:
         h5_key: str = self.create_h5_key(TYPE_POINTS, key, link_idx, minibatch_config)
@@ -117,7 +120,7 @@ class TrainHDF5Dataset(HDF5Dataset):
             type=TYPE_DEPTH
         )
         fliped = self.flip_horizontal(h5_key, src)
-        return fliped.data
+        return self.norm_depth._norm_depth(h5_key, fliped).data
 
 class ValHDF5Dataset(HDF5Dataset):
     def __init__(
@@ -136,6 +139,9 @@ class ValHDF5Dataset(HDF5Dataset):
 
         self.addcoords = AddCoordsNp(x_dim=output_size[0], y_dim=output_size[1])
 
+        self.resize_bilinear = Resize(output_size[::-1], interpolation=INTER_LINEAR)
+        self.norm_depth = Normalization(TYPE_DEPTH, ValueRange(0.0, 80.0))
+
         self.minibatch[DATASET_RGB][CONFIG_TAG_CREATEFUNC] = self.create_rgb_rgb
         self.minibatch[DATASET_G][CONFIG_TAG_CREATEFUNC] = self.create_g_gray
         self.minibatch[DATASET_D][CONFIG_TAG_CREATEFUNC] = self.create_d_sparse
@@ -146,11 +152,12 @@ class ValHDF5Dataset(HDF5Dataset):
         }
 
     def create_position(self, key: str, link_idx: int, minibatch_config: dict) -> np.ndarray:
-        return self.addcoords.call()
+        return hwc2chw(self.addcoords.call())
 
     def create_rgb_rgb(self, key: str, link_idx: int, minibatch_config: dict) -> np.ndarray:
         h5_key: str = self.create_h5_key(TYPE_BGR8, key, link_idx, minibatch_config)
-        return self.h5links[h5_key][()]
+        src = Data(data=self.h5links[h5_key][()], type=TYPE_BGR8)
+        return self.resize_bilinear(h5_key, src).data
 
     def create_g_gray(self, key: str, link_idx: int, minibatch_config: dict) -> np.ndarray:
         src: Data = Data(data=self.create_rgb_rgb(key, link_idx, minibatch_config), type=TYPE_BGR8)
@@ -173,11 +180,15 @@ class ValHDF5Dataset(HDF5Dataset):
         idxs = vgm.get_voxels_include_frustum(translation=pose.data[:3], quaternion=pose.data[-4:])
         vgm.set_voxels(idxs, self.h5links[h5_key][()][idxs])
 
-        return vgm.create_depthmap(
-            translation=pose.data[:3], quaternion=pose.data[-4:],
-            filter_radius=self.visibility_filter_radius,
-            filter_threshold=self.visibility_filter_threshold
+        src = Data(
+            data=vgm.create_depthmap(
+                translation=pose.data[:3], quaternion=pose.data[-4:],
+                filter_radius=self.visibility_filter_radius,
+                filter_threshold=self.visibility_filter_threshold
+            ),
+            type=TYPE_DEPTH
         )
+        return self.norm_depth._norm_depth(h5_key, src).data
 
     def create_gt_target(self, key: str, link_idx: int, minibatch_config: dict) -> np.ndarray:
         h5_key: str = self.create_h5_key(TYPE_POINTS, key, link_idx, minibatch_config)
@@ -189,8 +200,12 @@ class ValHDF5Dataset(HDF5Dataset):
 
         pose = Data(data=self.create_pose_from_pose(key, link_idx, minibatch_config), type=TYPE_POSE)
 
-        return pts.create_depthmap(
-            translation=pose.data[:3], quaternion=pose.data[-4:],
-            filter_radius=self.visibility_filter_radius,
-            filter_threshold=self.visibility_filter_threshold
+        src = Data(
+            data=pts.create_depthmap(
+                translation=pose.data[:3], quaternion=pose.data[-4:],
+                filter_radius=self.visibility_filter_radius,
+                filter_threshold=self.visibility_filter_threshold
+            ),
+            type=TYPE_DEPTH
         )
+        return self.norm_depth._norm_depth(h5_key, src).data

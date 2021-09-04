@@ -9,7 +9,7 @@ class MaskedMSELoss(nn.Module):
 
     def forward(self, pred, target):
         assert pred.dim() == target.dim(), "inconsistent dimensions"
-        valid_mask = (target > 0).detach()
+        valid_mask = ((0.0 < target) & (target <= 1.0)).detach()
         diff = target - pred
         diff = diff[valid_mask]
         self.loss = (diff**2).mean()
@@ -22,7 +22,7 @@ class MaskedL1Loss(nn.Module):
 
     def forward(self, pred, target, weight=None):
         assert pred.dim() == target.dim(), "inconsistent dimensions"
-        valid_mask = (target > 0).detach()
+        valid_mask = ((0.0 < target) & (target <= 1.0)).detach()
         diff = target - pred
         diff = diff[valid_mask]
         self.loss = diff.abs().mean()
