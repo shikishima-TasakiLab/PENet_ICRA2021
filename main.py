@@ -155,7 +155,8 @@ parser.add_argument('-edc', '--eval-data-config', type=str, help='Test dataset c
 parser.add_argument('-bs', '--block-size', type=int, help='Block size.')
 
 args = parser.parse_args()
-args.result = os.path.join('..', 'results')
+# args.result = os.path.join('..', 'results')
+args.result = os.path.join('results')
 args.use_rgb = ('rgb' in args.input)
 args.use_d = 'd' in args.input
 args.use_g = 'g' in args.input
